@@ -1,0 +1,5 @@
+libretranslatepy~=2.1.4
+argparse~=1.4.0
+eml-parser~=1.17.5
+beautifulsoup4~=4.12.3
+docx~=0.2.4
