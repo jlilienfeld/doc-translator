@@ -8,7 +8,7 @@ parser = argparse.ArgumentParser(
                     epilog='')
 parser.add_argument('path')
 args = parser.parse_args()
-print("Collection content types for all files in " + args.path)
+print("Collecting content types for all files in " + args.path)
 
 translation_marker = "\n[AUTO_TRANSLATED] FROM "
 file_count = 0
