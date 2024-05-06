@@ -6,7 +6,10 @@ import eml_parser
 from bs4 import BeautifulSoup as bs
 import base64
 import docx
+from PyPDF2 import PdfReader
+import io
 
+from openai import OpenAI
 
 parser = argparse.ArgumentParser(
                     prog='eml-translator',
@@ -24,16 +27,41 @@ parser.add_argument(
     help="https URL to the translation server",
     required=True
 )
+parser.add_argument(
+    '-a',
+    '--openaiurl',
+    help="Optional.  Experimental.  When specified, this tool will mark spam emails as spam.",
+    required=False
+)
 args = parser.parse_args()
 print("Will translate all files in " + args.path)
 
 source_language = "auto"
 if args.language is not None:
     source_language = args.language.lower()
-
+target_language = "en"
 
 lt = LibreTranslateAPI(args.server)
 supported_languages = lt.languages()
+
+ai_client = None
+if args.openaiurl is not None:
+    ai_client = OpenAI(base_url=args.openaiurl, api_key="lm-studio")
+
+
+def ai_email_summarize(text):
+    if ai_client is None:
+        return
+    completion = ai_client.chat.completions.create(
+        model="QuantFactory/Meta-Llama-3-8B-Instruct-GGUF",
+        messages=[
+            {"role": "system", "content": "You will summarize everything I say under 256 characters."},
+            {"role": "user", "content": text}
+        ],
+        temperature=0.7,
+    )
+
+    print(completion.choices[0].message.content)
 
 
 def save_file(file_path, data):
@@ -43,38 +71,23 @@ def save_file(file_path, data):
     print(file_path + " has been saved.")
 
 
-def retry(func, ex_type=Exception, limit=0, wait_ms=100, wait_increase_ratio=2, logger=None):
-    """
-    Retry a function invocation until no exception occurs
-    :param func: function to invoke
-    :param ex_type: retry only if exception is subclass of this type
-    :param limit: maximum number of invocation attempts
-    :param wait_ms: initial wait time after each attempt in milliseconds.
-    :param wait_increase_ratio: increase wait period by multiplying this value after each attempt.
-    :param logger: if not None, retry attempts will be logged to this logging.logger
-    :return: result of first successful invocation
-    :raises: last invocation exception if attempts exhausted or exception is not an instance of ex_type
-    """
-    attempt = 1
+def detect_lang(text):
     while True:
         try:
-            return func()
-        except Exception as ex:
-            if not isinstance(ex, ex_type):
-                raise ex
-            if 0 < limit <= attempt:
-                if logger:
-                    logger.warning("no more attempts")
-                raise ex
+            return lt.detect(q=text)[0]['language']
+        except Exception:
+            time.sleep(1)
+            continue
 
-            if logger:
-                logger.error("failed execution attempt #%d", attempt, exc_info=ex)
 
-            attempt += 1
-            if logger:
-                logger.info("waiting %d ms before attempt #%d", wait_ms, attempt)
-            time.sleep(wait_ms / 1000)
-            wait_ms *= wait_increase_ratio
+def translate_text(text):
+    while True:
+        try:
+            return lt.translate(q=text,
+                                source=source_language, target=target_language)
+        except Exception:
+            time.sleep(1)
+            continue
 
 
 def is_english_charpoint(string):
@@ -96,35 +109,44 @@ file_count = 0
 
 
 def translate_docx(filename, partname, html_data):
-    doc = docx.Document(filename)
+    doc = docx.Document(html_data)
     paragraph_num = len(doc.paragraphs)
-    print("Translating " + str(paragraph_num) + ".docx paragraphs in email " + filename + " attachement: " + partname)
+    print("Translating " + str(paragraph_num) + ".docx paragraphs in email " + filename + " attachment: " + partname)
     paragraph_pos = 0
     for paragraph in doc.paragraphs:
         paragraph_pos += 1
         if translation_marker in paragraph.text:
             continue
         if len(paragraph.text) > 0:
-            lang_code = lt.detect(q=paragraph.text)[0]['language']
+            lang_code = detect_lang(paragraph.text)
             if lang_code == "en":
                 continue
-            translation = lt.translate(q=paragraph.text, source=lang_code, target="en")
+            translation = translate_text(paragraph.text)
             paragraph.text += translation_marker + get_language_name(lang_code) + ":\n" + translation + "\n\n"
     doc.save(pathStr + "-" + filename)
 
 
+def translate_pdf(filename, partname, pdf_data):
+    reader = PdfReader(io.StringIO(pdf_data))
+    print("Translating " + str(len(reader.pages)) + " paragraphs in email " + filename + " attachment: " + partname)
+    output_text = ""
+    for page in reader.pages:
+        text = page.extract_text()
+        lang_code = detect_lang(text)
+        if lang_code == "en":
+            output_text += text
+            continue
+        output_text += translate_text(text)
+    return output_text
 
-def translate_html(filename, partname, html_data):
+
+def translate_html(pathStr, partName, html_data):
+    print("Translating HTML from email " + pathStr + " attachment: " + partName)
     parsed_html = bs(html_data, "html.parser")
+    extracted_text = ""
     for x in parsed_html.findAll(string=True):
         if x.string is not None:
-            source_lang = "en"
-            while True:
-                try:
-                    source_lang = lt.detect(q=x.string)[0]['language']
-                    break
-                except Exception as error:
-                    continue
+            source_lang = detect_lang(x.string)
 
             if source_lang != "en":
                 while True:
@@ -132,14 +154,51 @@ def translate_html(filename, partname, html_data):
                         result = lt.translate(q=x.string,
                                               source="auto", target="en")
                         original = x.string
-                        translation = "<br />" + translation_marker + get_language_name(source_lang) + ": " + result
+                        translation = " --- " + translation_marker + get_language_name(source_lang) + ": " + result
                         x.string.replace_with(original + " " + translation)
-                        print(x.string)
+                        extracted_text += result
                         break
                     except Exception as exception:
-                        print("Skipped " + partname + " in " + filename + " because of ", type(exception))
+                        print("Skipped " + partName + " in " + pathStr + " because of ", type(exception))
                         continue
+            else:
+                extracted_text += x.string
     return parsed_html.prettify(encoding='utf-8')
+
+
+def translate_plain_text(pathStr, partName, data):
+    print("Translating plaintext from email " + pathStr + " attachment: " + partName)
+    lines = iter(data.splitlines())
+    translated = ""
+    for line in lines:
+        source_lang = detect_lang(line)
+        translated += line
+        if source_lang != "en":
+            translated += "Translation from " + source_lang + ":\n"
+            translated += translate_text(line)
+    return translated
+
+
+def process_email_part(contentType, pathStr, partName, data):
+    match contentType:
+        case "text/html":
+            translation = translate_html(pathStr, partName, data)
+            save_file(pathStr + "-" + partName, translation)
+
+        case "text/plain":
+            translation = translate_plain_text(pathStr, partName, data)
+            save_file(pathStr + "-" + partName, translation)
+
+        case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+            translate_docx(pathStr, partName, data)
+
+        case "application/pdf":
+            translation = translate_pdf(pathStr, partName, data)
+            save_file(pathStr + "-" + partName, data)
+            save_file(pathStr + "-" + partName + "-translated-content.txt", translation)
+
+        case _:
+            save_file(pathStr + "-" + partName, data)
 
 
 pathlist = Path(args.path).glob('**/*.eml')
@@ -166,22 +225,11 @@ for path in pathlist:
             partName = "body-" + str(index) + ".html"
             if "content_type" in part:
                 content_type = part["content_type"]
-                if content_type == "text/html":
-                    translation = translate_html(pathStr, partName, part["content"])
-                    save_file(pathStr+"-"+partName, translation)
-                else:
-                    print("Not handling body with content-type: " + content_type)
-                    save_file(pathStr+"-"+partName, part["content"])
+                process_email_part(content_type, pathStr, partName, part["content"])
 
     if "attachment" in parsed_eml:
         for attachment in parsed_eml["attachment"]:
             content_hdr = attachment["content_header"]
             content_type = content_hdr["content-type"][0]
             filename = attachment["filename"]
-            if content_type == "text/html":
-                translation = translate_html(pathStr, filename, attachment["raw"])
-                save_file(pathStr + "-" + filename, translation)
-            else:
-                print("Not handling attachment " + filename + " with content-type: " + content_type)
-                save_file(pathStr + "-" + filename, base64.b64decode(attachment["raw"]))
-
+            process_email_part(content_type, pathStr, filename, base64.b64decode(attachment["raw"]))
