@@ -161,8 +161,7 @@ def translate_html(pathStr, partName, html_data):
             if source_lang != "en":
                 while True:
                     try:
-                        result = lt.translate(q=x.string,
-                                              source="auto", target="en")
+                        result = translate_text(x.string)
                         original = x.string
                         translation = " --- " + translation_marker + get_language_name(source_lang) + ": " + result
                         x.string.replace_with(original + " " + translation)
@@ -170,7 +169,7 @@ def translate_html(pathStr, partName, html_data):
                         break
                     except Exception as exception:
                         print("Skipped " + partName + " in " + pathStr + " because of ", type(exception))
-                        continue
+                        break
             else:
                 extracted_text += x.string
     return parsed_html.prettify(encoding='utf-8')
