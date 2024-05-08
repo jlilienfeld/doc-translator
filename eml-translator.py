@@ -72,6 +72,8 @@ def save_file(file_path, data):
 
 
 def detect_lang(text):
+    if (len(text)==0):
+        return "en"
     while True:
         try:
             return lt.detect(q=text)[0]['language']
@@ -81,6 +83,8 @@ def detect_lang(text):
 
 
 def translate_text(text):
+    if (len(text)==0):
+        return text
     while True:
         try:
             return lt.translate(q=text,
