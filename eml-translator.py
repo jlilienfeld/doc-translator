@@ -109,7 +109,7 @@ file_count = 0
 
 
 def translate_docx(filename, partname, html_data):
-    doc = docx.Document(html_data)
+    doc = docx.Document(io.BytesIO(html_data))
     paragraph_num = len(doc.paragraphs)
     print("Translating " + str(paragraph_num) + ".docx paragraphs in email " + filename + " attachment: " + partname)
     paragraph_pos = 0
@@ -123,11 +123,17 @@ def translate_docx(filename, partname, html_data):
                 continue
             translation = translate_text(paragraph.text)
             paragraph.text += translation_marker + get_language_name(lang_code) + ":\n" + translation + "\n\n"
-    doc.save(pathStr + "-" + filename)
+    if doc.inline_shapes.part is not None:
+        for key in doc.inline_shapes.part.related_parts:
+            related_part = doc.inline_shapes.part.related_parts[key]
+            if isinstance(related_part, docx.ImagePart):
+                save_file(pathStr + "-" + partname + "-" + related_part.partname.replace("/", "_"), related_part.blob)
+
+    doc.save(pathStr + "-" + partname)
 
 
 def translate_pdf(filename, partname, pdf_data):
-    reader = PdfReader(io.StringIO(pdf_data))
+    reader = PdfReader(io.BytesIO(pdf_data))
     print("Translating " + str(len(reader.pages)) + " paragraphs in email " + filename + " attachment: " + partname)
     output_text = ""
     for page in reader.pages:
@@ -187,7 +193,7 @@ def process_email_part(contentType, pathStr, partName, data):
 
         case "text/plain":
             translation = translate_plain_text(pathStr, partName, data)
-            save_file(pathStr + "-" + partName, translation)
+            save_file(pathStr + "-" + partName, translation.encode("utf-8"))
 
         case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
             translate_docx(pathStr, partName, data)
@@ -195,7 +201,7 @@ def process_email_part(contentType, pathStr, partName, data):
         case "application/pdf":
             translation = translate_pdf(pathStr, partName, data)
             save_file(pathStr + "-" + partName, data)
-            save_file(pathStr + "-" + partName + "-translated-content.txt", translation)
+            save_file(pathStr + "-" + partName + "-translated-content.txt", translation.encode("utf-8"))
 
         case _:
             save_file(pathStr + "-" + partName, data)
