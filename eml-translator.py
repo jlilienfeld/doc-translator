@@ -189,6 +189,9 @@ def translate_plain_text(pathStr, partName, data):
 
 
 def process_email_part(contentType, pathStr, partName, data):
+    if len(partName) > 255:
+        toRemove = len(partName) - 254
+        partName = partName[:128] + partName[128+toRemove:]
     match contentType:
         case "text/html":
             translation = translate_html(pathStr, partName, data)
