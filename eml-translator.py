@@ -8,6 +8,7 @@ import base64
 import docx
 from PyPDF2 import PdfReader
 import io
+import os
 
 from openai import OpenAI
 
