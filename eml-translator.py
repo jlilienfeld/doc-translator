@@ -189,8 +189,8 @@ def translate_plain_text(pathStr, partName, data):
 
 
 def process_email_part(contentType, pathStr, partName, data):
-    if len(partName) > 255:
-        toRemove = len(partName) - 254
+    if len(partName) > 200:
+        toRemove = len(partName) - 200
         partName = partName[:128] + partName[128+toRemove:]
     match contentType:
         case "text/html":
@@ -224,6 +224,8 @@ for path in pathlist:
     print(str(current_count) + " out of " + str(file_count) + " .eml files translated")
     current_count += 1
     pathStr = str(path)
+    if os.path.isfile(pathStr+"-body-1.html"):
+        print("Skipping " + pathStr+": Already translated.")
     print("Processing " + pathStr)
 
     ep = eml_parser.EmlParser(include_attachment_data=True, include_raw_body=True)
