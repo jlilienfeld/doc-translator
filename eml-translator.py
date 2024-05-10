@@ -227,6 +227,7 @@ for path in pathlist:
     pathStr = str(path)
     if os.path.isfile(pathStr+"-body-1.html"):
         print("Skipping " + pathStr+": Already translated.")
+        continue
     print("Processing " + pathStr)
 
     ep = eml_parser.EmlParser(include_attachment_data=True, include_raw_body=True)
