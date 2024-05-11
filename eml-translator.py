@@ -34,6 +34,20 @@ parser.add_argument(
     help="Optional.  Experimental.  When specified, this tool will mark spam emails as spam.",
     required=False
 )
+parser.add_argument(
+    '-r',
+    '--replicas',
+    help="Optional.  Number of replicas of this script will run for translation.",
+    required=False,
+    default=1
+)
+parser.add_argument(
+    '-i',
+    '--index',
+    help="Optional.  Replica index to run.  Zero based.",
+    required=False,
+    default=0
+)
 args = parser.parse_args()
 print("Will translate all files in " + args.path)
 
@@ -48,6 +62,19 @@ supported_languages = lt.languages()
 ai_client = None
 if args.openaiurl is not None:
     ai_client = OpenAI(base_url=args.openaiurl, api_key="lm-studio")
+
+
+def numeric_hash(input):
+    acc_val = 0
+    for character in input:
+        for byte in character.encode("utf-8"):
+            acc_val += byte * 97
+    return acc_val % int(args.replicas)
+
+
+def replica_is_owner(input):
+    hash = numeric_hash(input)
+    return hash == int(args.index)
 
 
 def ai_email_summarize(text):
@@ -222,9 +249,13 @@ print("Translating " + str(file_count) + " eml files")
 current_count = 0
 translation_needed = False
 for path in pathlist:
-    print(str(current_count) + " out of " + str(file_count) + " .eml files translated")
+    print(str(current_count) + " out of " + str(file_count) + " .eml files iterated")
     current_count += 1
     pathStr = str(path)
+
+    if not replica_is_owner(pathStr):
+        continue
+
     if os.path.isfile(pathStr+"-body-1.html"):
         print("Skipping " + pathStr+": Already translated.")
         continue
