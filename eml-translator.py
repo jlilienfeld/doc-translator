@@ -94,7 +94,10 @@ def ai_email_summarize(text):
 
 def save_file(file_path, data):
     translated_file = open(file_path, "wb")
-    translated_file.write(data)
+    if isinstance(data, str):
+        translated_file.write(data.encode("utf-8"))
+    else:
+        translated_file.write(data)
     translated_file.close()
     print(file_path + " has been saved.")
 
