@@ -1,4 +1,5 @@
 testdata/
+old-testdata/
 bin/
 lib/
 lib64

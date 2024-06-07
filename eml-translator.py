@@ -9,6 +9,7 @@ import docx
 from PyPDF2 import PdfReader
 import io
 import os
+import magic
 
 from openai import OpenAI
 
@@ -223,6 +224,12 @@ def process_email_part(contentType, pathStr, partName, data):
     if len(partName) > 200:
         toRemove = len(partName) - 200
         partName = partName[:128] + partName[128+toRemove:]
+
+    if isinstance(data, bytes):
+        if contentType == "text/plain":
+            contentType = "unknown"
+        contentType = magic.from_buffer(data, mime=True)
+
     match contentType:
         case "text/html":
             translation = translate_html(pathStr, partName, data)
