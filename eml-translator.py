@@ -236,8 +236,11 @@ def process_email_part(contentType, pathStr, partName, data):
             save_file(pathStr + "-" + partName, translation)
 
         case "text/plain":
-            translation = translate_plain_text(pathStr, partName, data)
-            save_file(pathStr + "-" + partName, translation.encode("utf-8"))
+            if isinstance(data, bytes):
+                save_file(pathStr + "-" + partName, data)
+            else :
+                translation = translate_plain_text(pathStr, partName, data)
+                save_file(pathStr + "-" + partName, translation.encode("utf-8"))
 
         case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
             translate_docx(pathStr, partName, data)
