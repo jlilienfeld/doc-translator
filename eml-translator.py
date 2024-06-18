@@ -3,7 +3,7 @@ from libretranslatepy import LibreTranslateAPI
 import time
 import argparse
 import eml_parser
-from bs4 import BeautifulSoup as bs
+from bs4 import BeautifulSoup as bs, Stylesheet, Comment
 import base64
 import docx
 from PyPDF2 import PdfReader
@@ -187,7 +187,7 @@ def translate_html(pathStr, partName, html_data):
     parsed_html = bs(html_data, "html.parser")
     extracted_text = ""
     for x in parsed_html.findAll(string=True):
-        if x.string is not None:
+        if x.string is not None and not isinstance(x.string, Comment) and not isinstance(x.string, Stylesheet):
             source_lang = detect_lang(x.string)
 
             if source_lang != "en":
