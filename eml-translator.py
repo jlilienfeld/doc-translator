@@ -104,7 +104,7 @@ def save_file(file_path, data):
 
 
 def detect_lang(text):
-    if (len(text)==0):
+    if is_noop_text(text):
         return "en"
     while True:
         try:
@@ -114,8 +114,22 @@ def detect_lang(text):
             continue
 
 
+def string_has_text(string):
+    for char in string:
+        if ord(char)>=65 and ord(char)<=90:
+            return True
+        if ord(char)>=97 and ord(char)<=122:
+            return True
+        if ord(char)>0xC0:
+            return True
+
+
+def is_noop_text(text):
+    return len(text)==0 or not string_has_text(text)
+
+
 def translate_text(text):
-    if (len(text)==0):
+    if is_noop_text(text):
         return text
     while True:
         try:
@@ -145,7 +159,11 @@ file_count = 0
 
 
 def translate_docx(filename, partname, html_data):
-    doc = docx.Document(io.BytesIO(html_data))
+    try:
+        doc = docx.Document(io.BytesIO(html_data))
+    except Exception:
+        save_file(filename + "-" + partname, html_data)
+        return
     paragraph_num = len(doc.paragraphs)
     print("Translating " + str(paragraph_num) + ".docx paragraphs in email " + filename + " attachment: " + partname)
     paragraph_pos = 0
