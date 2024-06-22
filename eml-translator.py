@@ -49,8 +49,17 @@ parser.add_argument(
     required=False,
     default=0
 )
+parser.add_argument(
+    '-p',
+    '--profile',
+    help="Optional.  Used to Profile the translation performance.  It won't store results, so its easy to repeat.",
+    required=False,
+    default=False,
+    action=argparse.BooleanOptionalAction)
 args = parser.parse_args()
 print("Will translate all files in " + args.path)
+translation_marker = "\n[AUTO_TRANSLATED] FROM "
+profiling = args.profile
 
 source_language = "auto"
 if args.language is not None:
@@ -94,6 +103,9 @@ def ai_email_summarize(text):
 
 
 def save_file(file_path, data):
+    if profiling:
+        return
+
     translated_file = open(file_path, "wb")
     if isinstance(data, str):
         translated_file.write(data.encode("utf-8"))
@@ -264,9 +276,12 @@ def process_email_part(contentType, pathStr, partName, data):
             translate_docx(pathStr, partName, data)
 
         case "application/pdf":
-            translation = translate_pdf(pathStr, partName, data)
+            try:
+                translation = translate_pdf(pathStr, partName, data)
+                save_file(pathStr + "-" + partName + "-translated-content.txt", translation.encode("utf-8"))
+            except Exception:
+                print("Skipping translating file " + pathStr + "-" + partName)
             save_file(pathStr + "-" + partName, data)
-            save_file(pathStr + "-" + partName + "-translated-content.txt", translation.encode("utf-8"))
 
         case _:
             save_file(pathStr + "-" + partName, data)
