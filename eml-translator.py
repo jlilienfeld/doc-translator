@@ -1,5 +1,4 @@
 from pathlib import Path
-from libretranslatepy import LibreTranslateAPI
 import time
 import argparse
 import eml_parser
@@ -12,6 +11,91 @@ import os
 import magic
 
 from openai import OpenAI
+import json
+import sys
+from typing import Any, Dict
+from urllib import request, parse
+
+
+class LibreTranslateAPI:
+    DEFAULT_URL = "https://translate.terraprint.co/"
+
+    def __init__(self, url: str | None = None, api_key: str | None = None):
+        """Create a LibreTranslate API connection.
+
+        Args:
+            url (str): The url of the LibreTranslate endpoint.
+            api_key (str): The API key.
+        """
+        self.url = LibreTranslateAPI.DEFAULT_URL if url is None else url
+        self.api_key = api_key
+
+        # Add trailing slash
+        assert len(self.url) > 0
+        if self.url[-1] != "/":
+            self.url += "/"
+
+    def translate(self, q: str, source: str = "en", target: str = "es", timeout: int | None = None) -> Any:
+        """Translate string
+
+        Args:
+            q (str): The text to translate
+            source (str): The source language code (ISO 639)
+            target (str): The target language code (ISO 639)
+            timeout (int): Request timeout in seconds
+
+        Returns:
+            str: The translated text
+        """
+        url = self.url + "translate"
+        params: Dict[str, str] = {"q": q, "source": source, "target": target}
+        if self.api_key is not None:
+            params["api_key"] = self.api_key
+        url_params = parse.urlencode(params)
+        req = request.Request(url, data=json.dumps(params).encode('utf-8'), method="POST", headers={"Content-Type": "application/json"})
+        response = request.urlopen(req, timeout=timeout)
+        response_str = response.read().decode()
+        return json.loads(response_str)
+
+    def detect(self, q: str, timeout: int | None = None) -> Any:
+        """Detect the language of a single text.
+
+        Args:
+            q (str): Text to detect
+            timeout (int): Request timeout in seconds
+
+        Returns:
+            The detected languages ex: [{"confidence": 0.6, "language": "en"}]
+        """
+        url = self.url + "detect"
+        params: Dict[str, str] = {"q": q}
+        if self.api_key is not None:
+            params["api_key"] = self.api_key
+        url_params = parse.urlencode(params)
+        req = request.Request(url, data=url_params.encode())
+        response = request.urlopen(req, timeout=timeout)
+        response_str = response.read().decode()
+        return json.loads(response_str)
+
+    def languages(self, timeout: int | None = None) -> Any:
+        """Retrieve list of supported languages.
+
+        Args:
+            timeout (int): Request timeout in seconds
+
+        Returns:
+            A list of available languages ex: [{"code":"en", "name":"English"}]
+        """
+        url = self.url + "languages"
+        params: Dict[str, str] = dict()
+        if self.api_key is not None:
+            params["api_key"] = self.api_key
+        url_params = parse.urlencode(params)
+        req = request.Request(url, data=url_params.encode(), method="GET")
+        response = request.urlopen(req, timeout=timeout)
+        response_str = response.read().decode()
+        return json.loads(response_str)
+
 
 parser = argparse.ArgumentParser(
                     prog='eml-translator',
@@ -115,17 +199,6 @@ def save_file(file_path, data):
     print(file_path + " has been saved.")
 
 
-def detect_lang(text):
-    if is_noop_text(text):
-        return "en"
-    while True:
-        try:
-            return lt.detect(q=text)[0]['language']
-        except Exception:
-            time.sleep(1)
-            continue
-
-
 def string_has_text(string):
     for char in string:
         if ord(char)>=65 and ord(char)<=90:
@@ -137,18 +210,18 @@ def string_has_text(string):
 
 
 def is_noop_text(text):
-    return len(text)==0 or not string_has_text(text)
+    return len(text)==0 or not string_has_text(text) or is_english_charpoint(text)
 
 
 def translate_text(text):
-    if is_noop_text(text):
-        return text
     while True:
         try:
-            return lt.translate(q=text,
-                                source=source_language, target=target_language)
-        except Exception:
+            result = lt.translate(q=text,
+                                           source=source_language, target=target_language)
+            return result
+        except Exception as e:
             time.sleep(1)
+            print("API call failed.  Retrying after 1 second.", e)
             continue
 
 
@@ -166,8 +239,68 @@ def get_language_name(language_code):
     return "Unknown - LibreTranslate returned no corresponding language for " + language_code
 
 
-translation_marker = "\n[AUTO_TRANSLATED] FROM "
+class TextBatch:
+    def __init__(self):
+        self.noop_entries = []
+        self.real_entries = []
+        self.batch_size = 0
+        self.max_batch_size = 8192
+
+    def add_text(self, text, context, contextParam, callback):
+        if is_noop_text(text):
+            self.noop_entries.append(
+                dict(text=text, result=text, source_language="", context=context, contextParam=contextParam, callback=callback))
+            return True
+        else:
+            if self.batch_size>0 and self.batch_size + len(text) >= self.max_batch_size:
+                return False
+            self.real_entries.append(
+                dict(text=text, result=text, source_language="", context=context, contextParam=contextParam, callback=callback))
+            self.batch_size += len(text)
+            return True
+
+    def finish(self):
+        if len(self.real_entries) == 0 and len(self.noop_entries) == 0:
+            return
+        if len(self.real_entries) > 0:
+            if source_language == "auto":
+                translations = [translate_text(text) for text in
+                                [entry['text'] for entry in self.real_entries]]
+            else:
+                result = translate_text([entry['text'] for entry in self.real_entries])
+                translations = result["translatedText"]
+        idx = 0
+        for entry in self.real_entries:
+            entry['result'] = translations[idx]
+            if source_language == "auto":
+                entry['source_language'] = translations[idx]["detectedLanguage"]["language"]
+            else:
+                entry['source_language'] = source_language
+            idx = idx + 1
+        for entry in self.noop_entries:
+            entry['source_language'] = "en"
+        for entry in self.noop_entries+self.real_entries:
+            original = entry["text"]
+            result = entry["result"]
+            context = entry["context"]
+            contextParam = entry["contextParam"]
+            source_lang = entry["source_language"]
+            entry["callback"](original, result, source_lang, context, contextParam)
+
+
 file_count = 0
+
+
+def flatten(list):
+    result = ""
+    for item in list:
+        result += item
+    return result
+
+
+def docx_translated_callback(original, result, source_lang, context, contextParam):
+    if source_lang != "en":
+        context.text += " --- " + translation_marker + source_lang + ": " + result
 
 
 def translate_docx(filename, partname, html_data):
@@ -176,19 +309,19 @@ def translate_docx(filename, partname, html_data):
     except Exception:
         save_file(filename + "-" + partname, html_data)
         return
+    batch = TextBatch()
     paragraph_num = len(doc.paragraphs)
     print("Translating " + str(paragraph_num) + ".docx paragraphs in email " + filename + " attachment: " + partname)
     paragraph_pos = 0
     for paragraph in doc.paragraphs:
         paragraph_pos += 1
-        if translation_marker in paragraph.text:
-            continue
         if len(paragraph.text) > 0:
-            lang_code = detect_lang(paragraph.text)
-            if lang_code == "en":
-                continue
-            translation = translate_text(paragraph.text)
-            paragraph.text += translation_marker + get_language_name(lang_code) + ":\n" + translation + "\n\n"
+            if not batch.add_text(paragraph.text, paragraph, 0, docx_translated_callback):
+                batch.finish()
+                batch = TextBatch()
+                batch.add_text(paragraph.text, paragraph, 0, docx_translated_callback)
+    batch.finish()
+
     if doc.inline_shapes.part is not None:
         for key in doc.inline_shapes.part.related_parts:
             related_part = doc.inline_shapes.part.related_parts[key]
@@ -198,55 +331,87 @@ def translate_docx(filename, partname, html_data):
     doc.save(pathStr + "-" + partname)
 
 
+def pdf_translated_callback(original, result, source_lang, context, contextParam):
+    if source_lang != "en":
+        context[contextParam] = original + " --- " + translation_marker + source_lang + ": " + result;
+    else:
+        context[contextParam] = result;
+
+
 def translate_pdf(filename, partname, pdf_data):
+    batch = TextBatch()
     reader = PdfReader(io.BytesIO(pdf_data))
     print("Translating " + str(len(reader.pages)) + " paragraphs in email " + filename + " attachment: " + partname)
-    output_text = ""
+    output_text = ["" for _ in range(len(reader.pages))]
+    index = 0
     for page in reader.pages:
         text = page.extract_text()
-        lang_code = detect_lang(text)
-        if lang_code == "en":
-            output_text += text
-            continue
-        output_text += translate_text(text)
-    return output_text
+        if not batch.add_text(
+                text,
+                output_text,
+                index,
+                pdf_translated_callback):
+            batch.finish()
+            batch = TextBatch()
+            batch.add_text(text,
+                output_text,
+                index,
+                pdf_translated_callback)
+        index=index+1
+
+    batch.finish()
+    return flatten(output_text)
+
+
+def html_translated_callback(original, result, source_lang, context, contextParam):
+    if source_lang != "en":
+        context.replace_with(original + " --- " + translation_marker + source_lang + ": " + result)
 
 
 def translate_html(pathStr, partName, html_data):
+    batch = TextBatch()
     print("Translating HTML from email " + pathStr + " attachment: " + partName)
     parsed_html = bs(html_data, "html.parser")
-    extracted_text = ""
     for x in parsed_html.findAll(string=True):
         if x.string is not None and not isinstance(x.string, Comment) and not isinstance(x.string, Stylesheet):
-            source_lang = detect_lang(x.string)
+            if not batch.add_text(
+                    x.string,
+                    x.string,
+                    0,
+                    html_translated_callback):
+                batch.finish()
+                batch = TextBatch()
+                batch.add_text(
+                    x.string,
+                    x.string,
+                    0,
+                    html_translated_callback)
 
-            if source_lang != "en":
-                while True:
-                    try:
-                        result = translate_text(x.string)
-                        original = x.string
-                        translation = " --- " + translation_marker + get_language_name(source_lang) + ": " + result
-                        x.string.replace_with(original + " " + translation)
-                        extracted_text += result
-                        break
-                    except Exception as exception:
-                        print("Skipped " + partName + " in " + pathStr + " because of ", type(exception))
-                        break
-            else:
-                extracted_text += x.string
+    batch.finish()
     return parsed_html.prettify(encoding='utf-8')
 
 
 def translate_plain_text(pathStr, partName, data):
     print("Translating plaintext from email " + pathStr + " attachment: " + partName)
+    batch = TextBatch()
     lines = iter(data.splitlines())
-    translated = ""
+    output_text = ["" for _ in range(len(reader.pages))]
+    index = 0
     for line in lines:
-        source_lang = detect_lang(line)
-        translated += line
-        if source_lang != "en":
-            translated += "Translation from " + source_lang + ":\n"
-            translated += translate_text(line)
+        if not batch.add_text(
+                line,
+                output_text,
+                index,
+                pdf_translated_callback):
+            batch.finish()
+            batch = TextBatch()
+            batch.add_text(
+                line,
+                output_text,
+                index,
+                pdf_translated_callback)
+        index=index+1
+    batch.finish()
     return translated
 
 
@@ -326,3 +491,5 @@ for path in pathlist:
             content_type = content_hdr["content-type"][0]
             filename = attachment["filename"]
             process_email_part(content_type, pathStr, filename, base64.b64decode(attachment["raw"]))
+
+print("Completed.")
