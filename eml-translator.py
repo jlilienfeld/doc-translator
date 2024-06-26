@@ -14,7 +14,7 @@ from openai import OpenAI
 import json
 import sys
 from typing import Any, Dict
-from urllib import request, parse
+from urllib import request, parse, error
 
 
 class LibreTranslateAPI:
@@ -219,6 +219,9 @@ def translate_text(text):
             result = lt.translate(q=text,
                                            source=source_language, target=target_language)
             return result
+        except error.HTTPError as e:
+            if e.status == 500:
+                return {"translatedText": text}
         except Exception as e:
             time.sleep(1)
             print("API call failed.  Retrying after 1 second.", e)
@@ -263,12 +266,8 @@ class TextBatch:
         if len(self.real_entries) == 0 and len(self.noop_entries) == 0:
             return
         if len(self.real_entries) > 0:
-            if source_language == "auto":
-                translations = [translate_text(text) for text in
-                                [entry['text'] for entry in self.real_entries]]
-            else:
-                result = translate_text([entry['text'] for entry in self.real_entries])
-                translations = result["translatedText"]
+            result = translate_text([entry['text'] for entry in self.real_entries])
+            translations = result["translatedText"]
         idx = 0
         for entry in self.real_entries:
             entry['result'] = translations[idx]
