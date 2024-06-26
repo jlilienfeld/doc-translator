@@ -395,7 +395,7 @@ def translate_plain_text(pathStr, partName, data):
     print("Translating plaintext from email " + pathStr + " attachment: " + partName)
     batch = TextBatch()
     lines = iter(data.splitlines())
-    output_text = ["" for _ in range(len(reader.pages))]
+    output_text = ["" for _ in range(len(data.splitlines()))]
     index = 0
     for line in lines:
         if not batch.add_text(
@@ -412,7 +412,7 @@ def translate_plain_text(pathStr, partName, data):
                 pdf_translated_callback)
         index=index+1
     batch.finish()
-    return translated
+    return flatten(output_text)
 
 
 def process_email_part(contentType, pathStr, partName, data):
