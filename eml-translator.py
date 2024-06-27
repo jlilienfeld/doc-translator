@@ -244,6 +244,7 @@ def get_language_name(language_code):
 
 class TextBatch:
     def __init__(self):
+        print("Starting translate batch.")
         self.noop_entries = []
         self.real_entries = []
         self.batch_size = 0
@@ -263,11 +264,15 @@ class TextBatch:
             return True
 
     def finish(self):
+        print("Completing translate batch of size " + self.batch_size + " with " + str(len(self.noop_entries)) +
+              " noop entries and " + str(len(self.real_entries)) + " real entries.")
         if len(self.real_entries) == 0 and len(self.noop_entries) == 0:
             return
         if len(self.real_entries) > 0:
             result = translate_text([entry['text'] for entry in self.real_entries])
             translations = result["translatedText"]
+            print("Batch translation completed.")
+
         idx = 0
         for entry in self.real_entries:
             entry['result'] = translations[idx]
@@ -304,8 +309,10 @@ def docx_translated_callback(original, result, source_lang, context, contextPara
 
 def translate_docx(filename, partname, html_data):
     try:
+        print("Opening docx " + filename + "-" + partname)
         doc = docx.Document(io.BytesIO(html_data))
     except Exception:
+        print("Failed to open docx " + filename + "-" + partname + " Dumping it.")
         save_file(filename + "-" + partname, html_data)
         return
     batch = TextBatch()
@@ -339,6 +346,7 @@ def pdf_translated_callback(original, result, source_lang, context, contextParam
 
 def translate_pdf(filename, partname, pdf_data):
     batch = TextBatch()
+    print("Opening PDF " + filename + "-" + partname)
     reader = PdfReader(io.BytesIO(pdf_data))
     print("Translating " + str(len(reader.pages)) + " paragraphs in email " + filename + " attachment: " + partname)
     output_text = ["" for _ in range(len(reader.pages))]
@@ -473,6 +481,7 @@ for path in pathlist:
 
     ep = eml_parser.EmlParser(include_attachment_data=True, include_raw_body=True)
     parsed_eml = ep.decode_email(path)
+    print("Parsed " + pathStr)
 
     if "body" in parsed_eml:
         body = parsed_eml["body"]
