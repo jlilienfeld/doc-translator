@@ -264,7 +264,7 @@ class TextBatch:
             return True
 
     def finish(self):
-        print("Completing translate batch of size " + self.batch_size + " with " + str(len(self.noop_entries)) +
+        print("Completing translate batch of size " + str(self.batch_size) + " with " + str(len(self.noop_entries)) +
               " noop entries and " + str(len(self.real_entries)) + " real entries.")
         if len(self.real_entries) == 0 and len(self.noop_entries) == 0:
             return
