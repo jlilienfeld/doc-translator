@@ -317,7 +317,17 @@ def translate_docx(filename, partname, html_data):
         return
     batch = TextBatch()
     paragraph_num = len(doc.paragraphs)
-    print("Translating " + str(paragraph_num) + ".docx paragraphs in email " + filename + " attachment: " + partname)
+    table_num = len(doc.tables)
+    print("Translating " + str(paragraph_num) + ".docx paragraphs and " + str(table_num) + " tables in email " +
+          filename + " attachment: " + partname)
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                if not batch.add_text(cell.text, cell, 0, docx_translated_callback):
+                    batch.finish()
+                    batch = TextBatch()
+                    batch.add_text(cell.text, cell, 0, docx_translated_callback)
+
     paragraph_pos = 0
     for paragraph in doc.paragraphs:
         paragraph_pos += 1
