@@ -484,7 +484,13 @@ for path in pathlist:
     if not replica_is_owner(pathStr):
         continue
 
-    if os.path.isfile(pathStr+"-body-1.html"):
+    if os.path.isfile(pathStr+"-body-1.html") or os.path.isfile(pathStr+"-rtf-body.rtf"):
+        print("Skipping " + pathStr + ": Already translated.")
+        # Pivot to an actual marker file to skip emails without rtf or html
+        Path(pathStr+"-translated-mark.mrk").touch()
+        continue
+
+    if os.path.isfile(pathStr+"-translated-mark.mrk"):
         print("Skipping " + pathStr+": Already translated.")
         continue
     print("Processing " + pathStr)
@@ -509,5 +515,7 @@ for path in pathlist:
             content_type = content_hdr["content-type"][0]
             filename = attachment["filename"]
             process_email_part(content_type, pathStr, filename, base64.b64decode(attachment["raw"]))
+
+    Path(pathStr + "-translated-mark.mrk").touch()
 
 print("Completed.")
