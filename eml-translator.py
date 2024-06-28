@@ -320,9 +320,13 @@ def translate_docx(filename, partname, html_data):
     table_num = len(doc.tables)
     print("Translating " + str(paragraph_num) + ".docx paragraphs and " + str(table_num) + " tables in email " +
           filename + " attachment: " + partname)
+    currentCell = None
     for table in doc.tables:
         for row in table.rows:
             for cell in row.cells:
+                if cell == currentCell:
+                    continue
+                currentCell = cell
                 if not batch.add_text(cell.text, cell, 0, docx_translated_callback):
                     batch.finish()
                     batch = TextBatch()
