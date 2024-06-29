@@ -141,7 +141,7 @@ parser.add_argument(
     default=False,
     action=argparse.BooleanOptionalAction)
 args = parser.parse_args()
-print("Will translate all files in " + args.path)
+print("Will translate all files in " + args.path, flush=True)
 translation_marker = "\n[AUTO_TRANSLATED] FROM "
 profiling = args.profile
 
@@ -183,7 +183,7 @@ def ai_email_summarize(text):
         temperature=0.7,
     )
 
-    print(completion.choices[0].message.content)
+    print(completion.choices[0].message.content, flush=True)
 
 
 def save_file(file_path, data):
@@ -196,7 +196,7 @@ def save_file(file_path, data):
     else:
         translated_file.write(data)
     translated_file.close()
-    print(file_path + " has been saved.")
+    print(file_path + " has been saved.", flush=True)
 
 
 def string_has_text(string):
@@ -224,7 +224,7 @@ def translate_text(text):
                 return {"translatedText": text}
         except Exception as e:
             time.sleep(1)
-            print("API call failed.  Retrying after 1 second.", e)
+            print("API call failed.  Retrying after 1 second.", e, flush=True)
             continue
 
 
@@ -244,7 +244,7 @@ def get_language_name(language_code):
 
 class TextBatch:
     def __init__(self):
-        print("Starting translate batch.")
+        print("Starting translate batch.", flush=True)
         self.noop_entries = []
         self.real_entries = []
         self.batch_size = 0
@@ -258,6 +258,8 @@ class TextBatch:
         else:
             if self.batch_size>0 and self.batch_size + len(text) >= self.max_batch_size:
                 return False
+            if len(text) >= self.max_batch_size:
+                print("Reached max", flush=True)
             self.real_entries.append(
                 dict(text=text, result=text, source_language="", context=context, contextParam=contextParam, callback=callback))
             self.batch_size += len(text)
@@ -265,13 +267,13 @@ class TextBatch:
 
     def finish(self):
         print("Completing translate batch of size " + str(self.batch_size) + " with " + str(len(self.noop_entries)) +
-              " noop entries and " + str(len(self.real_entries)) + " real entries.")
+              " noop entries and " + str(len(self.real_entries)) + " real entries.", flush=True)
         if len(self.real_entries) == 0 and len(self.noop_entries) == 0:
             return
         if len(self.real_entries) > 0:
             result = translate_text([entry['text'] for entry in self.real_entries])
             translations = result["translatedText"]
-            print("Batch translation completed.")
+            print("Batch translation completed.", flush=True)
 
         idx = 0
         for entry in self.real_entries:
@@ -309,17 +311,17 @@ def docx_translated_callback(original, result, source_lang, context, contextPara
 
 def translate_docx(filename, partname, html_data):
     try:
-        print("Opening docx " + filename + "-" + partname)
+        print("Opening docx " + filename + "-" + partname, flush=True)
         doc = docx.Document(io.BytesIO(html_data))
     except Exception:
-        print("Failed to open docx " + filename + "-" + partname + " Dumping it.")
+        print("Failed to open docx " + filename + "-" + partname + " Dumping it.", flush=True)
         save_file(filename + "-" + partname, html_data)
         return
     batch = TextBatch()
     paragraph_num = len(doc.paragraphs)
     table_num = len(doc.tables)
     print("Translating " + str(paragraph_num) + ".docx paragraphs and " + str(table_num) + " tables in email " +
-          filename + " attachment: " + partname)
+          filename + " attachment: " + partname, flush=True)
     currentCell = None
     for table in doc.tables:
         for row in table.rows:
@@ -360,9 +362,9 @@ def pdf_translated_callback(original, result, source_lang, context, contextParam
 
 def translate_pdf(filename, partname, pdf_data):
     batch = TextBatch()
-    print("Opening PDF " + filename + "-" + partname)
+    print("Opening PDF " + filename + "-" + partname, flush=True)
     reader = PdfReader(io.BytesIO(pdf_data))
-    print("Translating " + str(len(reader.pages)) + " paragraphs in email " + filename + " attachment: " + partname)
+    print("Translating " + str(len(reader.pages)) + " paragraphs in email " + filename + " attachment: " + partname, flush=True)
     output_text = ["" for _ in range(len(reader.pages))]
     index = 0
     for page in reader.pages:
@@ -391,7 +393,7 @@ def html_translated_callback(original, result, source_lang, context, contextPara
 
 def translate_html(pathStr, partName, html_data):
     batch = TextBatch()
-    print("Translating HTML from email " + pathStr + " attachment: " + partName)
+    print("Translating HTML from email " + pathStr + " attachment: " + partName, flush=True)
     parsed_html = bs(html_data, "html.parser")
     for x in parsed_html.findAll(string=True):
         if x.string is not None and not isinstance(x.string, Comment) and not isinstance(x.string, Stylesheet):
@@ -413,7 +415,7 @@ def translate_html(pathStr, partName, html_data):
 
 
 def translate_plain_text(pathStr, partName, data):
-    print("Translating plaintext from email " + pathStr + " attachment: " + partName)
+    print("Translating plaintext from email " + pathStr + " attachment: " + partName, flush=True)
     batch = TextBatch()
     lines = iter(data.splitlines())
     output_text = ["" for _ in range(len(data.splitlines()))]
@@ -446,6 +448,7 @@ def process_email_part(contentType, pathStr, partName, data):
             contentType = "unknown"
         contentType = magic.from_buffer(data, mime=True)
 
+    print("Processing email part " + partName + " with content-type " + contentType, flush=True)
     match contentType:
         case "text/html":
             translation = translate_html(pathStr, partName, data)
@@ -466,7 +469,7 @@ def process_email_part(contentType, pathStr, partName, data):
                 translation = translate_pdf(pathStr, partName, data)
                 save_file(pathStr + "-" + partName + "-translated-content.txt", translation.encode("utf-8"))
             except Exception:
-                print("Skipping translating file " + pathStr + "-" + partName)
+                print("Skipping translating file " + pathStr + "-" + partName, flush=True)
             save_file(pathStr + "-" + partName, data)
 
         case _:
@@ -477,11 +480,11 @@ pathlist = Path(args.path).glob('**/*.eml')
 for path in pathlist:
     file_count += 1
 pathlist = Path(args.path).glob('**/*.eml')
-print("Translating " + str(file_count) + " eml files")
+print("Translating " + str(file_count) + " eml files", flush=True)
 current_count = 0
 translation_needed = False
 for path in pathlist:
-    print(str(current_count) + " out of " + str(file_count) + " .eml files iterated")
+    print(str(current_count) + " out of " + str(file_count) + " .eml files iterated", flush=True)
     current_count += 1
     pathStr = str(path)
 
@@ -489,19 +492,19 @@ for path in pathlist:
         continue
 
     if os.path.isfile(pathStr+"-body-1.html") or os.path.isfile(pathStr+"-rtf-body.rtf"):
-        print("Skipping " + pathStr + ": Already translated.")
+        print("Skipping " + pathStr + ": Already translated.", flush=True)
         # Pivot to an actual marker file to skip emails without rtf or html
         Path(pathStr+"-translated-mark.mrk").touch()
         continue
 
     if os.path.isfile(pathStr+"-translated-mark.mrk"):
-        print("Skipping " + pathStr+": Already translated.")
+        print("Skipping " + pathStr+": Already translated.", flush=True)
         continue
-    print("Processing " + pathStr)
+    print("Processing " + pathStr, flush=True)
 
     ep = eml_parser.EmlParser(include_attachment_data=True, include_raw_body=True)
     parsed_eml = ep.decode_email(path)
-    print("Parsed " + pathStr)
+    print("Parsed " + pathStr, flush=True)
 
     if "body" in parsed_eml:
         body = parsed_eml["body"]
@@ -522,4 +525,4 @@ for path in pathlist:
 
     Path(pathStr + "-translated-mark.mrk").touch()
 
-print("Completed.")
+print("Completed.", flush=True)
