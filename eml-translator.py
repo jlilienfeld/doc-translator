@@ -444,16 +444,17 @@ def process_email_part(contentType, pathStr, partName, data):
         partName = partName[:128] + partName[128+toRemove:]
 
     if isinstance(data, bytes):
-        if contentType == "text/plain":
-            contentType = "unknown"
-        contentType = magic.from_buffer(data, mime=True)
+        if contentType == "text/plain" or contentType == "application/octet-stream":
+            contentType = magic.from_buffer(data, mime=True)
 
     print("Processing email part " + partName + " with content-type " + contentType, flush=True)
     match contentType:
         case "text/html":
             translation = translate_html(pathStr, partName, data)
             save_file(pathStr + "-" + partName, translation)
-
+        case "message/rfc822":
+            process_eml(pathStr + "-" + partName + ".eml", data)
+            save_file(pathStr + "-" + partName + ".eml", data)
         case "text/plain":
             if isinstance(data, bytes):
                 save_file(pathStr + "-" + partName, data)
@@ -474,6 +475,45 @@ def process_email_part(contentType, pathStr, partName, data):
 
         case _:
             save_file(pathStr + "-" + partName, data)
+
+
+def clean_eml_start(eml_bytes, max_lines):
+    if max_lines == 0:
+        return eml_bytes
+    test = eml_bytes.split(b'\n', 1)
+    if len(test[0]) > 1 and test[0][0]==ord('>'):
+        return clean_eml_start(test[1], max_lines - 1)
+    if b':' not in test[0]:
+        return clean_eml_start(test[1], max_lines - 1)
+    return eml_bytes
+
+
+def process_eml(pathStr, eml_bytes):
+    if len(eml_bytes) < 10:
+        print("Skipping " + pathStr + " which is too short to be valid .eml file", flush=True)
+        return
+    eml_bytes = clean_eml_start(eml_bytes, 5)
+
+    ep = eml_parser.EmlParser(include_attachment_data=True, include_raw_body=True)
+    parsed_eml = ep.decode_email_bytes(eml_bytes)
+    print("Parsed " + pathStr, flush=True)
+
+    if "body" in parsed_eml:
+        body = parsed_eml["body"]
+        index = 0
+        for part in body:
+            index += 1
+            partName = "body-" + str(index) + ".html"
+            if "content_type" in part:
+                content_type = part["content_type"]
+                process_email_part(content_type, pathStr, partName, part["content"])
+
+    if "attachment" in parsed_eml:
+        for attachment in parsed_eml["attachment"]:
+            content_hdr = attachment["content_header"]
+            content_type = content_hdr["content-type"][0]
+            filename = attachment["filename"]
+            process_email_part(content_type, pathStr, filename, base64.b64decode(attachment["raw"]))
 
 
 pathlist = Path(args.path).glob('**/*.eml')
@@ -500,29 +540,13 @@ for path in pathlist:
     if os.path.isfile(pathStr+"-translated-mark.mrk"):
         print("Skipping " + pathStr+": Already translated.", flush=True)
         continue
-    print("Processing " + pathStr, flush=True)
 
-    ep = eml_parser.EmlParser(include_attachment_data=True, include_raw_body=True)
-    parsed_eml = ep.decode_email(path)
-    print("Parsed " + pathStr, flush=True)
+    with open(pathStr, 'rb') as fp:
+        eml_bytes = raw_email = fp.read()
+        print("Processing " + pathStr + " ("+str(len(eml_bytes))+" bytes)", flush=True)
+        process_eml(pathStr, eml_bytes)
 
-    if "body" in parsed_eml:
-        body = parsed_eml["body"]
-        index = 0
-        for part in body:
-            index += 1
-            partName = "body-" + str(index) + ".html"
-            if "content_type" in part:
-                content_type = part["content_type"]
-                process_email_part(content_type, pathStr, partName, part["content"])
-
-    if "attachment" in parsed_eml:
-        for attachment in parsed_eml["attachment"]:
-            content_hdr = attachment["content_header"]
-            content_type = content_hdr["content-type"][0]
-            filename = attachment["filename"]
-            process_email_part(content_type, pathStr, filename, base64.b64decode(attachment["raw"]))
-
-    Path(pathStr + "-translated-mark.mrk").touch()
+    if not profiling:
+        Path(pathStr + "-translated-mark.mrk").touch()
 
 print("Completed.", flush=True)
