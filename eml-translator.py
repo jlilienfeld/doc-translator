@@ -439,9 +439,9 @@ def translate_plain_text(pathStr, partName, data):
 
 
 def process_email_part(contentType, pathStr, partName, data):
-    if len(partName) > 200:
-        toRemove = len(partName) - 200
-        partName = partName[:128] + partName[128+toRemove:]
+    if len(partName) > 100:
+        toRemove = len(partName) - 100
+        partName = partName[:28] + partName[28+toRemove:]
 
     if isinstance(data, bytes):
         if contentType == "text/plain" or contentType == "application/octet-stream":
