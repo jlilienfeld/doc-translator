@@ -444,8 +444,11 @@ def process_email_part(contentType, pathStr, partName, data):
         partName = partName[:28] + partName[28+toRemove:]
 
     if isinstance(data, bytes):
-        if contentType == "text/plain" or contentType == "application/octet-stream":
+        if (contentType == "text/plain" or
+            contentType == "application/octet-stream" or
+            contentType == "text/html"):
             contentType = magic.from_buffer(data, mime=True)
+
 
     print("Processing email part " + partName + " with content-type " + contentType, flush=True)
     match contentType:
