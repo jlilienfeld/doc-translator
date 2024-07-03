@@ -323,16 +323,25 @@ def translate_docx(filename, partname, html_data):
     print("Translating " + str(paragraph_num) + ".docx paragraphs and " + str(table_num) + " tables in email " +
           filename + " attachment: " + partname, flush=True)
     currentCell = None
+    visitedParagraphs = {}
+    visitedCells = {}
     for table in doc.tables:
         for row in table.rows:
             for cell in row.cells:
+                if id(cell) in visitedCells:
+                    continue
+                visitedCells[id(cell)] = True
                 if cell == currentCell:
                     continue
                 currentCell = cell
-                if not batch.add_text(cell.text, cell, 0, docx_translated_callback):
-                    batch.finish()
-                    batch = TextBatch()
-                    batch.add_text(cell.text, cell, 0, docx_translated_callback)
+                for paragraph in cell.paragraphs:
+                    if id(paragraph) in visitedParagraphs:
+                        continue
+                    visitedParagraphs[id(paragraph)] = True
+                    if not batch.add_text(paragraph.text, paragraph, 0, docx_translated_callback):
+                        batch.finish()
+                        batch = TextBatch()
+                        batch.add_text(paragraph.text, paragraph, 0, docx_translated_callback)
 
     paragraph_pos = 0
     for paragraph in doc.paragraphs:
