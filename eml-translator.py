@@ -507,7 +507,12 @@ def process_eml(pathStr, eml_bytes):
     eml_bytes = clean_eml_start(eml_bytes, 5)
 
     ep = eml_parser.EmlParser(include_attachment_data=True, include_raw_body=True)
-    parsed_eml = ep.decode_email_bytes(eml_bytes)
+    try:
+        parsed_eml = ep.decode_email_bytes(eml_bytes)
+    except Exception as e:
+        print("Skipping " + pathStr + ": " + str(e))
+        return
+
     print("Parsed " + pathStr, flush=True)
 
     if "body" in parsed_eml:
